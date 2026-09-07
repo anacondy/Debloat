@@ -41,6 +41,29 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
 
 **Nothing is removed until you confirm.** The default path is: scan → show → dry-run → confirm.
 
+### Prefer bash?
+
+A full bash edition lives in [`bash/`](bash/) — same catalog, same protected
+list, same safety model:
+
+```bash
+cd Debloat/bash
+./scan-bloat.sh          # look, change nothing
+./remove-bloat.sh        # interactive removal
+```
+
+Run it from **Git Bash, MSYS2, Cygwin, or WSL** with administrator rights.
+
+> ⚠️ **Bash cannot debloat Linux.** These scripts clean a *Windows*
+> installation; bash is only the driver. On native Linux or macOS
+> `remove-bloat.sh` refuses to run and exits 3 rather than pretending. Use
+> `./scan-bloat.sh --offline` to inspect the catalog from any OS.
+>
+> Appx/Store apps, restore points and Defender have no Windows CLI equivalent,
+> so those specific steps bridge to `powershell.exe`. Services, tasks, registry
+> and optional features use native `sc`/`schtasks`/`reg`/`dism`.
+> See [bash/README.md](bash/README.md) for the full breakdown.
+
 ---
 
 ## What This Script Does
@@ -406,6 +429,13 @@ names.
 Yes. Appx/service/task/registry work identically. Some x64-only OEM uninstallers
 may fail — they're logged and skipped.
 
+**Can I run this from bash / on Linux?**
+There is a full bash edition in [`bash/`](bash/). It runs from Git Bash, MSYS2,
+Cygwin or WSL and cleans the *Windows* system. It cannot debloat Linux itself —
+there is no Windows bloatware on Linux — and it exits with code 3 rather than
+pretending otherwise. `./bash/scan-bloat.sh --offline` inspects the catalog from
+any OS.
+
 **How do I undo everything?**
 `.\scripts\Restore-Bloat.ps1` → option 1 (System Restore Point).
 
@@ -426,6 +456,20 @@ display names; when in doubt mark REVIEW; driver-adjacent = DANGER).
 ---
 
 ## Changelog
+
+### v1.1.0 — 2026-09-08
+- **Added a complete bash edition** (`bash/`) — `remove-bloat.sh`,
+  `scan-bloat.sh`, `restore-bloat.sh` plus a four-module library
+- Same 185-entry catalog, 27+17 protected guards and 34 driver keywords,
+  enforced identically to the PowerShell edition
+- Native `sc`/`schtasks`/`reg`/`dism` used wherever Windows provides a CLI;
+  PowerShell bridged only for Appx, restore points and Defender
+- Honest refusal (exit 3) on non-Windows hosts instead of silent no-ops;
+  `scan-bloat.sh --offline` works anywhere
+- 164-assertion test suite runnable on any OS, including a mock Windows
+  toolchain that drives the removal engine end to end
+- CI extended: ShellCheck, LF-ending check, bash suite on Ubuntu *and* Git Bash,
+  and a catalog-parity job that fails the build if the two editions drift
 
 ### v1.0.0 — 2026-09-08
 - Initial release
@@ -464,6 +508,18 @@ display names; when in doubt mark REVIEW; driver-adjacent = DANGER).
 │       ├── Backup-Registry.ps1    .reg export + Appx snapshot
 │       ├── Write-RemovalLog.ps1   structured logging
 │       └── Get-DriverInfo.ps1     driver identification
+├── bash/                      bash edition (same catalog + safety model)
+│   ├── remove-bloat.sh        master interactive script
+│   ├── scan-bloat.sh          read-only scan, --offline works on any OS
+│   ├── restore-bloat.sh       five restore paths
+│   ├── README.md              bash-specific docs and limitations
+│   ├── lib/
+│   │   ├── common.sh          env detection, PowerShell bridge, logging
+│   │   ├── bloatdata.sh       protected list + 185-entry catalog
+│   │   ├── detect.sh          system info and enumeration
+│   │   └── remove.sh          removal engine, Defender, validation
+│   └── tests/
+│       └── test_bloat.sh      164-assertion suite, runs on any OS
 ├── docs/
 │   ├── Categories.md
 │   ├── Manual-Commands.md

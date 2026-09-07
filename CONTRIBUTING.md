@@ -30,6 +30,32 @@ All targets live in one place: **`scripts/helpers/BloatData.ps1`**, inside
 5. Add a matching entry to `docs/Categories.md` and a one-liner to
    `docs/Manual-Commands.md`.
 
+## Keeping the bash edition in sync
+
+Every catalog change must be made in **both** places:
+
+| Edition | File |
+|---|---|
+| PowerShell | `scripts/helpers/BloatData.ps1` |
+| bash | `bash/lib/bloatdata.sh` |
+
+The bash catalog uses a pipe-delimited line instead of a hashtable:
+
+```bash
+'1|Publisher.AppName|SAFE|Appx||optional note'
+# CATKEY|NAME|RISK|TYPE|EXTRA|NOTE
+```
+
+`EXTRA` carries type-specific data:
+- `Service` -> start mode for `sc.exe`: `auto`, `demand` or `disabled`
+- `Registry` -> `HIVE\PATH::VALUENAME::DATA`
+- `Cleanup` -> a path template such as `%TEMP%`
+
+**CI fails the build if the two catalogs drift.** The `parity` job diffs them
+entry by entry, and test 7 in the bash suite additionally asserts that both
+`Test-Protected` implementations agree on every probe package. Adding an entry
+to one edition without the other will be caught.
+
 ## Adding a protected package
 
 Add to `$Global:ProtectedExact` (exact/prefix match) or
@@ -37,6 +63,19 @@ Add to `$Global:ProtectedExact` (exact/prefix match) or
 the reason in `docs/Protected-Packages.md`.
 
 ## Testing before you open a PR
+
+### Bash edition
+
+```bash
+shellcheck -S warning -x bash/*.sh bash/lib/*.sh bash/tests/*.sh
+./bash/tests/test_bloat.sh          # 164 assertions, runs on any OS
+./bash/scan-bloat.sh --offline      # catalog listing, no Windows needed
+```
+
+The suite runs anywhere — it mocks `reg.exe`, `sc.exe`, `schtasks.exe` and
+`dism.exe` so the removal engine is exercised end to end without a Windows host.
+
+### PowerShell edition
 
 ```powershell
 # 1. Syntax check everything

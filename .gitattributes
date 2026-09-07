@@ -8,6 +8,10 @@
 *.bat   text eol=crlf
 *.cmd   text eol=crlf
 
+# Bash MUST be LF - CRLF makes the interpreter fail with
+# "bad interpreter: /usr/bin/env bash^M"
+*.sh    text eol=lf
+
 *.md    text eol=lf
 *.yml   text eol=lf
 
