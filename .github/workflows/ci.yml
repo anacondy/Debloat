@@ -12,7 +12,7 @@ jobs:
     name: PowerShell syntax check
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Parse every .ps1
         shell: pwsh
@@ -36,7 +36,7 @@ jobs:
     name: Protected-list guard tests (PowerShell)
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Verify critical packages can never be removed
         shell: pwsh
@@ -83,7 +83,7 @@ jobs:
     name: ShellCheck (bash edition)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install shellcheck
         run: sudo apt-get update && sudo apt-get install -y shellcheck
@@ -108,7 +108,7 @@ jobs:
     name: Bash test suite
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install PowerShell (for cross-edition parity tests)
         run: |
@@ -128,7 +128,7 @@ jobs:
     name: Bash test suite (Git Bash on Windows)
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Run test suite under Git Bash
         shell: bash
@@ -140,7 +140,7 @@ jobs:
     name: Catalog parity (bash vs PowerShell)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install PowerShell
         run: |
@@ -179,7 +179,7 @@ jobs:
     runs-on: windows-latest
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - shell: pwsh
         run: |
           Install-Module PSScriptAnalyzer -Force -Scope CurrentUser -SkipPublisherCheck
