@@ -29,6 +29,21 @@ assert_contains() { if [[ "$2" == *"$3"* ]]; then ok "$1"; else bad "$1" "expect
 
 section() { printf '\n%s== %s ==%s\n' "$TC_C" "$1" "$TC_N"; }
 
+# Native-Windows interop: python.exe / powershell.exe cannot resolve MSYS
+# paths, and MSYS never rewrites a path embedded inside a -c "..." string.
+winpath() {
+    if command -v cygpath >/dev/null 2>&1; then cygpath -m -- "$1"; else printf '%s' "$1"; fi
+}
+# Smoke-test the interpreter: on Windows 'python3' is often an App Execution
+# Alias stub that prints nothing. Empty PY simply skips the JSON tests.
+PY=''
+for _c in python3 python py; do
+    if command -v "$_c" >/dev/null 2>&1 && "$_c" -c 'import json,csv' >/dev/null 2>&1; then
+        PY="$_c"; break
+    fi
+done
+unset _c
+
 # =====================================================================
 section "1. Library loading"
 # =====================================================================
@@ -218,10 +233,12 @@ for c in "$HOME/.pwsh/pwsh" pwsh powershell; do
 done
 
 if [[ -n "$PS_BIN" && -f "$REPO/scripts/helpers/BloatData.ps1" ]]; then
+    PS_DATA="$(winpath "$REPO/scripts/helpers/BloatData.ps1")"
     ps_cat=$("$PS_BIN" -NoProfile -Command "
-        . '$REPO/scripts/helpers/BloatData.ps1'
+        . '$PS_DATA'
         foreach(\$k in \$Global:BloatCatalog.Keys){
           foreach(\$i in \$Global:BloatCatalog[\$k].Items){ \"\$k|\$(\$i.N)\" } }" 2>/dev/null | tr -d '\r' | sort -u)
+    assert_true "PowerShell catalog query returned data" '[[ -n "$ps_cat" ]]'
     sh_cat=$(for l in "${BLOAT_CATALOG[@]}"; do
                 printf '%s|%s\n' "$(catalog_field "$l" 1)" "$(catalog_field "$l" 2)"
              done | sort -u)
@@ -231,8 +248,9 @@ if [[ -n "$PS_BIN" && -f "$REPO/scripts/helpers/BloatData.ps1" ]]; then
     assert_eq "catalog matches PowerShell (extra)"   "${only_sh:-none}" "none"
 
     ps_prot=$("$PS_BIN" -NoProfile -Command "
-        . '$REPO/scripts/helpers/BloatData.ps1'
+        . '$PS_DATA'
         \$Global:ProtectedExact -join \"\`n\"" 2>/dev/null | tr -d '\r' | sort -u)
+    assert_true "PowerShell protected query returned data" '[[ -n "$ps_prot" ]]'
     sh_prot=$(printf '%s\n' "${PROTECTED_EXACT[@]}" | sort -u)
     diff_prot=$(comm -3 <(printf '%s\n' "$ps_prot") <(printf '%s\n' "$sh_prot"))
     assert_eq "protected list matches PowerShell" "${diff_prot:-none}" "none"
@@ -241,7 +259,7 @@ if [[ -n "$PS_BIN" && -f "$REPO/scripts/helpers/BloatData.ps1" ]]; then
     mismatch=0
     for p in "${MUST_PROTECT[@]}" "${MUST_NOT_BLOCK[@]}"; do
         psr=$("$PS_BIN" -NoProfile -Command "
-            . '$REPO/scripts/helpers/BloatData.ps1'
+            . '$PS_DATA'
             if (Test-Protected '$p') { 'Y' } else { 'N' }" 2>/dev/null | tr -d '\r[:space:]')
         if is_protected "$p"; then shr=Y; else shr=N; fi
         [[ "$psr" == "$shr" ]] || { mismatch=$((mismatch+1)); printf '        MISMATCH %s: ps=%s bash=%s\n' "$p" "$psr" "$shr"; }
@@ -301,6 +319,8 @@ assert_contains "scan --help shows usage" "$sh_" "Usage:"
 section "11. Logging (.log + .json)"
 # =====================================================================
 TMP=$(mktemp -d)
+W_TJSON="$(winpath "$TMP/t.json")"
+W_ESC="$(winpath "$TMP/esc.json")"
 # SYS_* are read by log_init/log_complete in common.sh
 export SYS_PRODUCT='Windows 11 Pro' SYS_DISPLAYVER='23H2' SYS_BUILD='22631.4169'
 export SYS_ARCH='x64' SYS_WINGET='Available (1.8)' SYS_ONLINE='Connected'
@@ -320,21 +340,21 @@ assert_contains "log has header"  "$(cat "$TMP/t.log")" "Bloatware Removal Log"
 assert_contains "log has summary" "$(cat "$TMP/t.log")" "Items removed: 1"
 assert_contains "log has GB"      "$(cat "$TMP/t.log")" "2.30 GB"
 
-if command -v python3 >/dev/null 2>&1; then
-    if python3 -c "import json,sys; json.load(open('$TMP/t.json'))" 2>/dev/null; then
+if [[ -n "$PY" ]]; then
+    if "$PY" -c "import json,sys; json.load(open('$W_TJSON'))" 2>/dev/null; then
         ok "JSON is valid and parses"
     else
-        bad "JSON is valid and parses" "$(python3 -c "import json;json.load(open('$TMP/t.json'))" 2>&1 | tail -1)"
+        bad "JSON is valid and parses" "$("$PY" -c "import json;json.load(open('$W_TJSON'))" 2>&1 | tail -1)"
     fi
-    acts=$(python3 -c "import json;print(len(json.load(open('$TMP/t.json'))['actions']))" 2>/dev/null)
+    acts=$("$PY" -c "import json;print(len(json.load(open('$W_TJSON'))['actions']))" 2>/dev/null)
     assert_eq "JSON has 3 actions" "$acts" "3"
-    freed=$(python3 -c "import json;print(json.load(open('$TMP/t.json'))['summary']['spaceFreedBytes'])" 2>/dev/null)
+    freed=$("$PY" -c "import json;print(json.load(open('$W_TJSON'))['summary']['spaceFreedBytes'])" 2>/dev/null)
     assert_eq "JSON records bytes freed" "$freed" "2469606195"
-    reboot=$(python3 -c "import json;print(json.load(open('$TMP/t.json'))['summary']['rebootRequired'])" 2>/dev/null)
+    reboot=$("$PY" -c "import json;print(json.load(open('$W_TJSON'))['summary']['rebootRequired'])" 2>/dev/null)
     assert_eq "JSON records reboot flag" "$reboot" "True"
-    gen=$(python3 -c "import json;print(json.load(open('$TMP/t.json'))['generator'])" 2>/dev/null)
+    gen=$("$PY" -c "import json;print(json.load(open('$W_TJSON'))['generator'])" 2>/dev/null)
     assert_eq "JSON marks bash generator" "$gen" "bash"
-    val=$(python3 -c "import json;print(json.load(open('$TMP/t.json'))['validation']['store'])" 2>/dev/null)
+    val=$("$PY" -c "import json;print(json.load(open('$W_TJSON'))['validation']['store'])" 2>/dev/null)
     assert_eq "JSON embeds validation" "$val" "False"
 fi
 
@@ -344,8 +364,8 @@ log_init "$TMP/esc.log"
 log_msg FAIL 'weird "quoted" \ backslash' 'Pkg"With\Quotes' 'Cat' 'Appx'
 log_complete 0 0 0 'null' >/dev/null
 QUIET=0
-if command -v python3 >/dev/null 2>&1; then
-    if python3 -c "import json;json.load(open('$TMP/esc.json'))" 2>/dev/null; then
+if [[ -n "$PY" ]]; then
+    if "$PY" -c "import json;json.load(open('$W_ESC'))" 2>/dev/null; then
         ok "JSON survives quotes and backslashes"
     else
         bad "JSON survives quotes and backslashes"
@@ -475,31 +495,33 @@ export PATH="$OLD_PATH"
 section "12b. Export formats (regression: unescaped backslashes)"
 # =====================================================================
 EXP=$(mktemp -d)
+W_OJSON="$(winpath "$EXP/o.json")"
+W_OCSV="$(winpath "$EXP/o.csv")"
 "$ROOT/scan-bloat.sh" --offline --csv "$EXP/o.csv" --json "$EXP/o.json" >/dev/null 2>&1
 assert_true "csv export created"  "[[ -s '$EXP/o.csv' ]]"
 assert_true "json export created" "[[ -s '$EXP/o.json' ]]"
 
-if command -v python3 >/dev/null 2>&1; then
+if [[ -n "$PY" ]]; then
     # Task names contain Windows backslashes; these MUST be escaped
-    if python3 -c "import json;json.load(open('$EXP/o.json'))" 2>/dev/null; then
+    if "$PY" -c "import json;json.load(open('$W_OJSON'))" 2>/dev/null; then
         ok "exported JSON is valid (backslashes escaped)"
     else
         bad "exported JSON is valid (backslashes escaped)" \
-            "$(python3 -c "import json;json.load(open('$EXP/o.json'))" 2>&1 | tail -1)"
+            "$("$PY" -c "import json;json.load(open('$W_OJSON'))" 2>&1 | tail -1)"
     fi
-    jn=$(python3 -c "import json;print(len(json.load(open('$EXP/o.json'))))" 2>/dev/null)
+    jn=$("$PY" -c "import json;print(len(json.load(open('$W_OJSON'))))" 2>/dev/null)
     assert_eq "JSON export has 185 items" "$jn" "185"
-    hasbs=$(python3 -c "import json;print(any(chr(92) in x['name'] for x in json.load(open('$EXP/o.json'))))" 2>/dev/null)
+    hasbs=$("$PY" -c "import json;print(any(chr(92) in x['name'] for x in json.load(open('$W_OJSON'))))" 2>/dev/null)
     assert_eq "JSON preserves backslash names" "$hasbs" "True"
 
-    if python3 -c "import csv;list(csv.DictReader(open('$EXP/o.csv')))" 2>/dev/null; then
+    if "$PY" -c "import csv;list(csv.DictReader(open('$W_OCSV')))" 2>/dev/null; then
         ok "exported CSV parses"
     else
         bad "exported CSV parses"
     fi
-    cn=$(python3 -c "import csv;print(len(list(csv.DictReader(open('$EXP/o.csv')))))" 2>/dev/null)
+    cn=$("$PY" -c "import csv;print(len(list(csv.DictReader(open('$W_OCSV')))))" 2>/dev/null)
     assert_eq "CSV export has 185 rows" "$cn" "185"
-    cc=$(python3 -c "import csv;print(len(list(csv.DictReader(open('$EXP/o.csv')))[0]))" 2>/dev/null)
+    cc=$("$PY" -c "import csv;print(len(list(csv.DictReader(open('$W_OCSV')))[0]))" 2>/dev/null)
     assert_eq "CSV has 4 columns" "$cc" "4"
 fi
 rm -rf "$EXP"
