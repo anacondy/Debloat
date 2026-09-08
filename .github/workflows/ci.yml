@@ -1,0 +1,187 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  syntax:
+    name: PowerShell syntax check
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Parse every .ps1
+        shell: pwsh
+        run: |
+          $failed = 0
+          Get-ChildItem -Recurse -Filter *.ps1 | ForEach-Object {
+            $errors = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile(
+              $_.FullName, [ref]$null, [ref]$errors)
+            if ($errors.Count) {
+              $failed++
+              Write-Host "::error file=$($_.FullName)::Parse errors in $($_.Name)"
+              $errors | ForEach-Object { Write-Host "  line $($_.Extent.StartLineNumber): $($_.Message)" }
+            } else {
+              Write-Host "OK  $($_.Name)"
+            }
+          }
+          if ($failed) { exit 1 }
+
+  protected-list:
+    name: Protected-list guard tests (PowerShell)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify critical packages can never be removed
+        shell: pwsh
+        run: |
+          . ./scripts/helpers/BloatData.ps1
+          $mustProtect = @(
+            'Microsoft.WindowsStore'
+            'Microsoft.DesktopAppInstaller_8wekyb3d8bbwe'
+            'Microsoft.VCLibs.140.00'
+            'Microsoft.UI.Xaml.2.8'
+            'Microsoft.NET.Native.Runtime.2.2'
+            'Microsoft.SecHealthUI'
+            'windows.immersivecontrolpanel'
+            'Microsoft.LanguageExperiencePackfr-FR'
+            'Microsoft.WindowsAppRuntime.1.5'
+            'Microsoft.Windows.StartMenuExperienceHost'
+          )
+          $mustNotBlock = @(
+            'king.com.CandyCrushSaga'
+            'Microsoft.Copilot'
+            'MicrosoftTeams'
+            'Microsoft.BingNews'
+            'Microsoft.XboxGamingOverlay'
+          )
+          $fail = 0
+          foreach ($p in $mustProtect) {
+            if (-not (Test-Protected $p)) { Write-Host "::error::LEAK - $p is not protected"; $fail++ }
+          }
+          foreach ($p in $mustNotBlock) {
+            if (Test-Protected $p) { Write-Host "::error::OVERBLOCK - $p should be removable"; $fail++ }
+          }
+          if (-not (Test-DriverRelated 'Realtek High Definition Audio Driver')) {
+            Write-Host "::error::Driver detection failed"; $fail++
+          }
+          if (Test-DriverRelated 'Candy Crush Saga') {
+            Write-Host "::error::Driver detection false positive"; $fail++
+          }
+          Write-Host "Categories: $($Global:BloatCatalog.Keys.Count)"
+          Write-Host "Catalog items: $((($Global:BloatCatalog.Values | ForEach-Object {$_.Items.Count}) | Measure-Object -Sum).Sum)"
+          if ($fail) { exit 1 }
+          Write-Host "All guard tests passed."
+
+  shellcheck:
+    name: ShellCheck (bash edition)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install shellcheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+
+      - name: Lint all bash scripts
+        run: |
+          shellcheck --version
+          shellcheck -S warning -x bash/*.sh bash/lib/*.sh bash/tests/*.sh
+
+      - name: Verify LF line endings
+        run: |
+          fail=0
+          for f in bash/*.sh bash/lib/*.sh bash/tests/*.sh; do
+            if grep -qU $'\r' "$f"; then
+              echo "::error file=$f::CRLF line endings - bash cannot execute this"
+              fail=1
+            fi
+          done
+          exit $fail
+
+  bash-tests:
+    name: Bash test suite
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install PowerShell (for cross-edition parity tests)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y wget apt-transport-https software-properties-common
+          wget -q "https://packages.microsoft.com/config/ubuntu/$(lsb_release -rs)/packages-microsoft-prod.deb"
+          sudo dpkg -i packages-microsoft-prod.deb
+          sudo apt-get update
+          sudo apt-get install -y powershell
+
+      - name: Run test suite
+        run: |
+          chmod +x bash/*.sh bash/tests/*.sh
+          ./bash/tests/test_bloat.sh
+
+  bash-tests-windows:
+    name: Bash test suite (Git Bash on Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run test suite under Git Bash
+        shell: bash
+        run: |
+          chmod +x bash/*.sh bash/tests/*.sh
+          ./bash/tests/test_bloat.sh
+
+  parity:
+    name: Catalog parity (bash vs PowerShell)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install PowerShell
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y wget apt-transport-https software-properties-common
+          wget -q "https://packages.microsoft.com/config/ubuntu/$(lsb_release -rs)/packages-microsoft-prod.deb"
+          sudo dpkg -i packages-microsoft-prod.deb
+          sudo apt-get update
+          sudo apt-get install -y powershell
+
+      - name: Diff the two catalogs
+        run: |
+          pwsh -NoProfile -Command '
+            . ./scripts/helpers/BloatData.ps1
+            foreach($k in $Global:BloatCatalog.Keys){
+              foreach($i in $Global:BloatCatalog[$k].Items){ "$k|$($i.N)" } }' \
+            | tr -d '\r' | sort -u > /tmp/ps_cat.txt
+
+          bash -c '
+            source bash/lib/bloatdata.sh
+            for l in "${BLOAT_CATALOG[@]}"; do
+              printf "%s|%s\n" "$(catalog_field "$l" 1)" "$(catalog_field "$l" 2)"
+            done' | sort -u > /tmp/sh_cat.txt
+
+          echo "PowerShell entries: $(wc -l < /tmp/ps_cat.txt)"
+          echo "Bash entries:       $(wc -l < /tmp/sh_cat.txt)"
+
+          if ! diff -u /tmp/ps_cat.txt /tmp/sh_cat.txt; then
+            echo "::error::Catalog drift between bash and PowerShell editions"
+            exit 1
+          fi
+          echo "Catalogs are identical."
+
+  analyzer:
+    name: PSScriptAnalyzer
+    runs-on: windows-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - shell: pwsh
+        run: |
+          Install-Module PSScriptAnalyzer -Force -Scope CurrentUser -SkipPublisherCheck
+          Invoke-ScriptAnalyzer -Path . -Recurse -Severity Error,Warning |
+            Format-Table -AutoSize
