@@ -1,5 +1,11 @@
 # Windows 11 Debloat
 
+[![CI](https://github.com/anacondy/Debloat/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/anacondy/Debloat/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Platform: Windows 11](https://img.shields.io/badge/platform-Windows%2011-0078D6.svg)](https://www.microsoft.com/windows/windows-11)
+[![PowerShell 5.1+](https://img.shields.io/badge/PowerShell-5.1%2B-5391FE.svg)](https://learn.microsoft.com/powershell/)
+[![Bash edition](https://img.shields.io/badge/bash-edition%20included-4EAA25.svg)](bash/)
+
 **Safely detect and remove Windows 11 bloatware, OEM junk, trial antivirus, telemetry and modern bloat (Copilot, Widgets, Teams, Phone Link).**
 
 One command. Shows you everything first. Makes a restore point. Never touches the parts of Windows that matter.

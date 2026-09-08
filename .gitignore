@@ -21,3 +21,6 @@ $RECYCLE.BIN/
 .vscode/
 .idea/
 *.swp
+
+# Packaging artifacts (the repo is the source of truth, not a zip of it)
+*.zip
