@@ -1,0 +1,20 @@
+* text=auto eol=lf
+
+# PowerShell must be CRLF on Windows
+*.ps1   text eol=crlf
+*.psm1  text eol=crlf
+*.psd1  text eol=crlf
+*.reg   text eol=crlf
+*.bat   text eol=crlf
+*.cmd   text eol=crlf
+
+# Bash MUST be LF - CRLF makes the interpreter fail with
+# "bad interpreter: /usr/bin/env bash^M"
+*.sh    text eol=lf
+
+*.md    text eol=lf
+*.yml   text eol=lf
+
+*.png binary
+*.jpg binary
+*.zip binary

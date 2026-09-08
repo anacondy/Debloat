@@ -1,0 +1,26 @@
+# Logs & backups produced at runtime
+logs/*
+!logs/.gitkeep
+backups/*
+!backups/.gitkeep
+*.log
+BloatRemoval-*.json
+
+# PowerShell
+*.ps1xml.bak
+PSScriptAnalyzerSettings.local.psd1
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+# Editors
+.vscode/
+.idea/
+*.swp
+
+# Packaging artifacts (the repo is the source of truth, not a zip of it)
+*.zip
